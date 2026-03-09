@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Cormorant+Garamond:wght@500;600;700&display=swap');
+
+:root {
+  color: #fff7ec;
+  font-family: 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
+  font-synthesis: none;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(circle at top, rgba(195, 76, 35, 0.22), transparent 40%),
+    linear-gradient(180deg, #1a0808 0%, #120404 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #f2b34e;
+  outline-offset: 2px;
+}
