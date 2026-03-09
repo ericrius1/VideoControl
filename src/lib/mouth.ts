@@ -27,6 +27,17 @@ export function calculateMouthOpenness(landmarks: NormalizedLandmark[]) {
   return vertical / horizontal
 }
 
+export function formatTimestamp(value: number) {
+  if (!Number.isFinite(value) || value < 0) {
+    return '--:--'
+  }
+
+  const minutes = Math.floor(value / 60)
+  const seconds = Math.floor(value % 60)
+
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
 export function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message

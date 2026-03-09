@@ -1,10 +1,11 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'
 import { Pane } from 'tweakpane'
-import './App.css'
+import './Player.css'
 import {
   calculateMouthOpenness,
   clamp,
+  formatTimestamp,
   getErrorMessage,
   isAcceptedVideoFile,
 } from './lib/mouth'
@@ -27,7 +28,10 @@ type Settings = {
 }
 
 type RuntimeSnapshot = {
+  currentTime: number
+  duration: number
   faceVisible: boolean
+  isRewinding: boolean
   mouthOpen: boolean
   progressToRewind: number
   rawOpenness: number
@@ -41,16 +45,19 @@ const DEFAULT_SETTINGS: Settings = {
   hysteresis: 0.012,
   mirrorCameraPreview: true,
   mouthControlEnabled: true,
-  openThreshold: 0.065,
+  openThreshold: 0.5,
   requirePlayback: true,
-  rewindIntervalMs: 500,
-  rewindStepSec: 1,
+  rewindIntervalMs: 100,
+  rewindStepSec: 1.2,
   showCameraPreview: true,
   smoothing: 0.72,
 }
 
 const DEFAULT_RUNTIME: RuntimeSnapshot = {
+  currentTime: 0,
+  duration: 0,
   faceVisible: false,
+  isRewinding: false,
   mouthOpen: false,
   progressToRewind: 0,
   rawOpenness: 0,
@@ -74,7 +81,8 @@ function App() {
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [cameraState, setCameraState] = useState<CameraState>('idle')
   const [isDragging, setIsDragging] = useState(false)
-  const [paneVisible, setPaneVisible] = useState(true)
+  const [isStageHovered, setIsStageHovered] = useState(false)
+  const [paneVisible, setPaneVisible] = useState(false)
   const [runtime, setRuntime] = useState<RuntimeSnapshot>(DEFAULT_RUNTIME)
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [trackerError, setTrackerError] = useState<string | null>(null)
@@ -88,6 +96,7 @@ function App() {
   const detectionRef = useRef({
     elapsedOpenMs: 0,
     faceVisible: false,
+    isRewinding: false,
     lastDetectionAt: 0,
     lastUiUpdateAt: 0,
     mouthOpen: false,
@@ -107,9 +116,16 @@ function App() {
 
   const cameraReady = cameraState === 'ready'
   const trackingReady = trackerState === 'ready'
-  const openNetSpeed =
-    1 - settings.rewindStepSec / Math.max(settings.rewindIntervalMs / 1000, 0.001)
   const meterMaximum = Math.max(settings.openThreshold * 2.2, 0.16)
+  const transportProgress =
+    runtime.duration > 0 ? clamp(runtime.currentTime / runtime.duration, 0, 1) : 0
+  const transportVisible =
+    Boolean(videoSource) && (paneVisible || isStageHovered || runtime.isRewinding)
+  const utilityVisible = paneVisible || isStageHovered || !videoSource
+  const showCameraPreview = settings.showCameraPreview && cameraState !== 'idle'
+  const hasHiddenIssue = !paneVisible && Boolean(videoError || cameraError || trackerError)
+  const previewMeterProgress = clamp(runtime.smoothedOpenness / meterMaximum, 0, 1)
+  const previewThresholdProgress = clamp(settings.openThreshold / meterMaximum, 0, 1)
 
   async function ensureTracker() {
     if (trackerRef.current) {
@@ -212,6 +228,7 @@ function App() {
     detectionRef.current = {
       elapsedOpenMs: 0,
       faceVisible: false,
+      isRewinding: false,
       lastDetectionAt: 0,
       lastUiUpdateAt: 0,
       mouthOpen: false,
@@ -219,7 +236,12 @@ function App() {
       rewinds: 0,
       smoothedOpenness: 0,
     }
-    setRuntime(DEFAULT_RUNTIME)
+
+    setRuntime((current) => ({
+      ...DEFAULT_RUNTIME,
+      currentTime: current.currentTime,
+      duration: current.duration,
+    }))
   }
 
   function loadVideoFile(file: File) {
@@ -267,14 +289,16 @@ function App() {
     const pane = new Pane({
       container,
       expanded: true,
-      title: 'Feel',
+      title: 'Debug',
     })
+
+    pane.hidden = true
     mouthPaneRef.current = pane
 
     const rewindFolder = pane.addFolder({ expanded: true, title: 'Rewind' })
     rewindFolder.addBinding(paneSettings, 'mouthControlEnabled', { label: 'enabled' })
     rewindFolder.addBinding(paneSettings, 'openThreshold', {
-      label: 'open threshold',
+      label: 'threshold',
       max: 0.2,
       min: 0.02,
       step: 0.001,
@@ -331,6 +355,7 @@ function App() {
       settingsRef.current = nextSettings
       setSettings(nextSettings)
     })
+
     return () => {
       mouthPaneRef.current = null
       pane.dispose()
@@ -361,6 +386,43 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const playerVideo = playerVideoRef.current
+
+    if (!playerVideo) {
+      return
+    }
+
+    const syncTransport = () => {
+      startTransition(() => {
+        setRuntime((current) => ({
+          ...current,
+          currentTime: playerVideo.currentTime || 0,
+          duration: Number.isFinite(playerVideo.duration) ? playerVideo.duration : 0,
+        }))
+      })
+    }
+
+    syncTransport()
+    playerVideo.addEventListener('durationchange', syncTransport)
+    playerVideo.addEventListener('loadedmetadata', syncTransport)
+    playerVideo.addEventListener('pause', syncTransport)
+    playerVideo.addEventListener('play', syncTransport)
+    playerVideo.addEventListener('seeked', syncTransport)
+    playerVideo.addEventListener('seeking', syncTransport)
+    playerVideo.addEventListener('timeupdate', syncTransport)
+
+    return () => {
+      playerVideo.removeEventListener('durationchange', syncTransport)
+      playerVideo.removeEventListener('loadedmetadata', syncTransport)
+      playerVideo.removeEventListener('pause', syncTransport)
+      playerVideo.removeEventListener('play', syncTransport)
+      playerVideo.removeEventListener('seeked', syncTransport)
+      playerVideo.removeEventListener('seeking', syncTransport)
+      playerVideo.removeEventListener('timeupdate', syncTransport)
+    }
+  }, [videoSource])
+
+  useEffect(() => {
     if (!cameraReady || !trackingReady) {
       return
     }
@@ -379,6 +441,7 @@ function App() {
       const playerVideo = playerVideoRef.current
       const tracker = trackerRef.current
       const currentSettings = settingsRef.current
+      let rewoundThisFrame = false
 
       const canApplyRewind =
         Boolean(playerVideo) &&
@@ -395,6 +458,7 @@ function App() {
           playerVideo.currentTime = Math.max(0, playerVideo.currentTime - currentSettings.rewindStepSec)
           detection.elapsedOpenMs -= currentSettings.rewindIntervalMs
           detection.rewinds += 1
+          rewoundThisFrame = true
         }
       } else {
         detection.elapsedOpenMs = 0
@@ -435,12 +499,19 @@ function App() {
         }
       }
 
+      detection.isRewinding =
+        canApplyRewind && (detection.elapsedOpenMs > 0 || rewoundThisFrame)
+
       if (now - detection.lastUiUpdateAt >= 80) {
         detection.lastUiUpdateAt = now
 
         startTransition(() => {
           setRuntime({
+            currentTime: playerVideo?.currentTime ?? 0,
+            duration:
+              playerVideo && Number.isFinite(playerVideo.duration) ? playerVideo.duration : 0,
             faceVisible: detection.faceVisible,
+            isRewinding: detection.isRewinding,
             mouthOpen: detection.mouthOpen,
             progressToRewind:
               currentSettings.rewindIntervalMs > 0
@@ -488,235 +559,255 @@ function App() {
   }, [settings.autoplayOnLoad, videoSource])
 
   return (
-    <main className="app-shell">
-      <div className="ambient ambient--left" />
-      <div className="ambient ambient--right" />
+    <main className="video-shell">
+      <section
+        className={`video-stage ${isDragging ? 'video-stage--dragging' : ''}`}
+        onDragEnter={(event) => {
+          event.preventDefault()
+          setIsDragging(true)
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault()
 
-      <section className="hero">
-        <p className="hero__eyebrow">Mouth-driven practice transport</p>
-        <div className="hero__heading-row">
-          <div>
-
-            <p className="hero__copy">
-              Drop in an `.mp4` or `.mov`, keep your hands on the guitar, and open your
-              mouth to pull the phrase back into reach.
-            </p>
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setIsDragging(false)
+          }
+        }}
+        onDragOver={(event) => {
+          event.preventDefault()
+          setIsDragging(true)
+        }}
+        onDrop={(event) => {
+          event.preventDefault()
+          setIsDragging(false)
+          handleSelectedFile(event.dataTransfer.files[0] ?? null)
+        }}
+        onMouseEnter={() => setIsStageHovered(true)}
+        onMouseLeave={() => setIsStageHovered(false)}
+      >
+        {videoSource ? (
+          <video
+            ref={playerVideoRef}
+            className="lesson-video"
+            controls
+            playsInline
+            src={videoSource}
+            onError={() => {
+              setVideoError(
+                'This file loaded, but the browser could not decode it. Some .mov codecs need to be re-exported as H.264.',
+              )
+            }}
+          />
+        ) : (
+          <div className="empty-stage">
+            <div className="empty-stage__card">
+              <p className="empty-stage__eyebrow">Mouth-driven practice transport</p>
+              <h1>Drop an `.mp4` or `.mov` lesson video.</h1>
+              <p>
+                Keep your hands on the guitar. Open your mouth to charge rewind. Press
+                <kbd>/</kbd> when you want the tuning panel.
+              </p>
+              <div className="empty-stage__actions">
+                <button
+                  className="stage-button"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Upload video
+                </button>
+                <button
+                  className="stage-button stage-button--ghost"
+                  disabled={cameraState === 'starting'}
+                  type="button"
+                  onClick={() => void startCamera()}
+                >
+                  {cameraReady
+                    ? 'Camera ready'
+                    : cameraState === 'starting'
+                      ? 'Starting camera'
+                      : 'Enable camera'}
+                </button>
+              </div>
+            </div>
           </div>
-          <button
-            className="slash-hint"
-            type="button"
-            onClick={() => setPaneVisible((visible) => !visible)}
-          >
-            <span>/</span>
-            {paneVisible ? 'Hide feel panel' : 'Show feel panel'}
-          </button>
-        </div>
-      </section>
+        )}
 
-      <section className="workspace">
-        <div className="player-column">
-          <div
-            className={`dropzone ${isDragging ? 'dropzone--active' : ''} ${videoSource ? 'dropzone--loaded' : ''}`}
-            onDragEnter={(event) => {
-              event.preventDefault()
-              setIsDragging(true)
-            }}
-            onDragLeave={(event) => {
-              event.preventDefault()
+        <input
+          ref={fileInputRef}
+          accept=".mov,.mp4,video/mp4,video/quicktime"
+          className="visually-hidden"
+          type="file"
+          onChange={(event) => {
+            handleSelectedFile(event.target.files?.[0] ?? null)
+            event.target.value = ''
+          }}
+        />
 
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                setIsDragging(false)
-              }
-            }}
-            onDragOver={(event) => {
-              event.preventDefault()
-              setIsDragging(true)
-            }}
-            onDrop={(event) => {
-              event.preventDefault()
-              setIsDragging(false)
-              handleSelectedFile(event.dataTransfer.files[0] ?? null)
-            }}
-          >
-            <div className="dropzone__header">
-              <div>
-                <p className="dropzone__label">Lesson video</p>
-                <h2>{videoName ?? 'Drop a file here'}</h2>
-              </div>
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                Upload video
-              </button>
-              <input
-                ref={fileInputRef}
-                accept=".mov,.mp4,video/mp4,video/quicktime"
-                className="visually-hidden"
-                type="file"
-                onChange={(event) => {
-                  handleSelectedFile(event.target.files?.[0] ?? null)
-                  event.target.value = ''
-                }}
-              />
-            </div>
-
-            <div className="stage">
-              {videoSource ? (
-                <video
-                  ref={playerVideoRef}
-                  className="lesson-video"
-                  controls
-                  playsInline
-                  src={videoSource}
-                  onError={() => {
-                    setVideoError(
-                      'This file loaded, but the browser could not decode it. Some .mov codecs need to be re-exported as H.264.',
-                    )
-                  }}
-                />
-              ) : (
-                <div className="empty-stage">
-                  <p>Supports `.mp4` and `.mov`.</p>
-                  <p>Camera tracking starts when you load a video or press Enable Camera.</p>
-                </div>
-              )}
-
-              <video
-                ref={cameraVideoRef}
-                autoPlay
-                className={`camera-preview ${
-                  settings.showCameraPreview ? '' : 'camera-preview--hidden'
-                } ${settings.mirrorCameraPreview ? 'camera-preview--mirrored' : ''}`}
-                muted
-                playsInline
-              />
-
-              <div className="stage__badges">
-                <span className={`badge ${runtime.faceVisible ? 'badge--good' : 'badge--idle'}`}>
-                  {runtime.faceVisible ? 'Face tracked' : 'Looking for face'}
-                </span>
-                <span className={`badge ${runtime.mouthOpen ? 'badge--warn' : 'badge--good'}`}>
-                  {runtime.mouthOpen ? 'Mouth open' : 'Mouth closed'}
-                </span>
-              </div>
-            </div>
-
-            {(videoError || cameraError || trackerError) && (
-              <div className="error-stack">
-                {videoError && <p>{videoError}</p>}
-                {cameraError && <p>Camera: {cameraError}</p>}
-                {trackerError && <p>MediaPipe: {trackerError}</p>}
-              </div>
+        <div
+          className={`stage-toolbar ${
+            utilityVisible ? 'stage-toolbar--visible' : 'stage-toolbar--hidden'
+          }`}
+        >
+          <div className="stage-toolbar__meta">
+            {videoName ? (
+              <span className="stage-chip">{videoName}</span>
+            ) : (
+              <span className="stage-chip stage-chip--muted">Drop video to begin</span>
             )}
           </div>
+          <div className="stage-toolbar__actions">
+            {!cameraReady && (
+              <button
+                className="stage-button stage-button--ghost"
+                disabled={cameraState === 'starting'}
+                type="button"
+                onClick={() => void startCamera()}
+              >
+                {cameraState === 'starting' ? 'Starting camera' : 'Enable camera'}
+              </button>
+            )}
+            <button
+              className="stage-button stage-button--ghost"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {videoSource ? 'Replace video' : 'Upload video'}
+            </button>
+            <button
+              className="stage-button stage-button--slash"
+              type="button"
+              onClick={() => setPaneVisible((visible) => !visible)}
+            >
+              <span>/</span>
+              {paneVisible ? 'Hide debug' : 'Show debug'}
+            </button>
+          </div>
+        </div>
 
-          <div className="status-grid">
-            <article className="status-card">
-              <p className="status-card__label">Mouth openness</p>
-              <div className="status-card__value-row">
+        {videoSource && (
+          <div
+            className={`transport-overlay ${
+              transportVisible ? 'transport-overlay--visible' : 'transport-overlay--hidden'
+            } ${runtime.isRewinding ? 'transport-overlay--rewinding' : ''}`}
+          >
+            <div className="transport-overlay__labels">
+              <span>{runtime.isRewinding ? 'Rewinding' : 'Position'}</span>
+              <span>
+                {formatTimestamp(runtime.currentTime)} / {formatTimestamp(runtime.duration)}
+              </span>
+            </div>
+            <div className="transport-overlay__track" aria-hidden="true">
+              <div
+                className="transport-overlay__fill"
+                style={{ width: `${transportProgress * 100}%` }}
+              />
+              <div
+                className="transport-overlay__thumb"
+                style={{ left: `${transportProgress * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div
+          className={`camera-dock ${
+            showCameraPreview ? 'camera-dock--visible' : 'camera-dock--hidden'
+          }`}
+        >
+          <video
+            ref={cameraVideoRef}
+            autoPlay
+            className={`camera-preview ${
+              settings.mirrorCameraPreview ? 'camera-preview--mirrored' : ''
+            }`}
+            muted
+            playsInline
+          />
+          <div className="camera-dock__meter" aria-hidden="true">
+            <div
+              className={`camera-dock__fill ${
+                runtime.mouthOpen ? 'camera-dock__fill--active' : ''
+              }`}
+              style={{ width: `${previewMeterProgress * 100}%` }}
+            />
+            <div
+              className="camera-dock__threshold"
+              style={{ left: `${previewThresholdProgress * 100}%` }}
+            />
+          </div>
+        </div>
+
+        <div
+          className={`debug-overlay ${
+            paneVisible ? 'debug-overlay--visible' : 'debug-overlay--hidden'
+          }`}
+        >
+          <div className="debug-overlay__metrics">
+            <article className="debug-card">
+              <p className="debug-card__label">Mouth openness</p>
+              <div className="debug-card__value-row">
                 <strong>{runtime.smoothedOpenness.toFixed(3)}</strong>
                 <span>raw {runtime.rawOpenness.toFixed(3)}</span>
               </div>
-              <div className="meter">
+              <div className="debug-meter">
                 <div
-                  className="meter__fill"
-                  style={{
-                    width: `${clamp(runtime.smoothedOpenness / meterMaximum, 0, 1) * 100}%`,
-                  }}
+                  className={`debug-meter__fill ${
+                    runtime.mouthOpen ? 'debug-meter__fill--active' : ''
+                  }`}
+                  style={{ width: `${previewMeterProgress * 100}%` }}
                 />
                 <div
-                  className="meter__threshold"
-                  style={{
-                    left: `${clamp(settings.openThreshold / meterMaximum, 0, 1) * 100}%`,
-                  }}
+                  className="debug-meter__threshold"
+                  style={{ left: `${previewThresholdProgress * 100}%` }}
                 />
               </div>
-              <p className="status-card__hint">
-                Threshold {settings.openThreshold.toFixed(3)} with {settings.hysteresis.toFixed(3)} hysteresis
+              <p className="debug-card__hint">
+                Threshold {settings.openThreshold.toFixed(3)} with{' '}
+                {settings.hysteresis.toFixed(3)} hysteresis
               </p>
             </article>
 
-            <article className="status-card">
-              <p className="status-card__label">Rewind charge</p>
-              <div className="status-card__value-row">
+            <article className="debug-card">
+              <p className="debug-card__label">Rewind charge</p>
+              <div className="debug-card__value-row">
                 <strong>{Math.round(runtime.progressToRewind * 100)}%</strong>
                 <span>
                   {settings.rewindStepSec.toFixed(2)}s every{' '}
                   {(settings.rewindIntervalMs / 1000).toFixed(2)}s
                 </span>
               </div>
-              <div className="progress-bar">
+              <div className="debug-meter">
                 <div
-                  className="progress-bar__fill"
+                  className="debug-meter__fill debug-meter__fill--active"
                   style={{ width: `${runtime.progressToRewind * 100}%` }}
                 />
               </div>
-              <p className="status-card__hint">Total rewinds this load: {runtime.rewinds}</p>
-            </article>
-
-            <article className="status-card">
-              <p className="status-card__label">System</p>
-              <div className="status-card__value-row">
-                <strong>
-                  {cameraReady
-                    ? 'Camera ready'
-                    : cameraState === 'starting'
-                      ? 'Starting camera'
-                      : cameraState === 'error'
-                        ? 'Camera error'
-                        : 'Camera idle'}
-                </strong>
-                <span>
-                  {trackingReady
-                    ? 'MediaPipe ready'
-                    : trackerState === 'loading'
-                      ? 'Loading MediaPipe'
-                      : trackerState === 'error'
-                        ? 'Tracker error'
-                        : 'Tracker idle'}
-                </span>
-              </div>
-              <p className="status-card__hint">
-                Mouth-open net transport: {openNetSpeed >= 0 ? '+' : ''}
-                {openNetSpeed.toFixed(2)}x
-              </p>
-              <div className="action-row">
-                <button
-                  className="primary-button"
-                  disabled={cameraReady}
-                  type="button"
-                  onClick={() => void startCamera()}
-                >
-                  {cameraReady ? 'Camera ready' : 'Enable camera'}
-                </button>
-                <button
-                  className="ghost-button"
-                  type="button"
-                  onClick={() => resetRuntime()}
-                >
-                  Reset counters
-                </button>
-              </div>
+              <p className="debug-card__hint">Total rewinds this load: {runtime.rewinds}</p>
             </article>
           </div>
+
+          <div className="debug-overlay__controls">
+            <div className="pane-host" ref={paneContainerRef} />
+          </div>
+
+          {(videoError || cameraError || trackerError) && (
+            <div className="debug-overlay__errors">
+              {videoError && <p>{videoError}</p>}
+              {cameraError && <p>Camera: {cameraError}</p>}
+              {trackerError && <p>MediaPipe: {trackerError}</p>}
+            </div>
+          )}
         </div>
 
-        <aside className="panel-column">
-          <div className="panel-intro">
-            <p className="panel-intro__label">Dial it in</p>
-            <h2>Shape the feel for your face, camera angle, and phrase length.</h2>
-            <p>
-              Use <kbd>/</kbd> to show or hide the panel. Good lighting and a stable,
-              front-facing camera make the mouth threshold much easier to tune.
-            </p>
-          </div>
-          <div
-            className={`pane-host ${paneVisible ? 'pane-host--visible' : 'pane-host--hidden'}`}
-            ref={paneContainerRef}
-          />
-        </aside>
+        {hasHiddenIssue && (
+          <button
+            className="warning-pill"
+            type="button"
+            onClick={() => setPaneVisible(true)}
+          >
+            Open debug for error details
+          </button>
+        )}
       </section>
     </main>
   )

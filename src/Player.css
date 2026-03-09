@@ -1,0 +1,531 @@
+#root {
+  min-height: 100vh;
+}
+
+.video-shell {
+  background:
+    radial-gradient(circle at top, rgba(198, 73, 24, 0.18), transparent 34%),
+    radial-gradient(circle at bottom left, rgba(255, 209, 114, 0.08), transparent 30%),
+    linear-gradient(180deg, #1a0505 0%, #0d0202 100%);
+  min-height: 100vh;
+}
+
+.video-stage {
+  align-items: stretch;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 236, 0.04), rgba(255, 247, 236, 0)),
+    #120505;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+.video-stage::before {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.16) 18%, transparent 36%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.1) 22%, transparent 38%);
+  content: '';
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
+.video-stage--dragging::after {
+  border: 2px dashed rgba(243, 195, 132, 0.8);
+  border-radius: 28px;
+  content: '';
+  inset: 1rem;
+  pointer-events: none;
+  position: absolute;
+  z-index: 6;
+}
+
+.lesson-video,
+.camera-preview {
+  display: block;
+}
+
+.lesson-video {
+  height: 100vh;
+  object-fit: contain;
+  position: relative;
+  width: 100%;
+  z-index: 0;
+}
+
+.empty-stage {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1.5rem;
+  position: relative;
+  width: 100%;
+  z-index: 2;
+}
+
+.empty-stage__card {
+  backdrop-filter: blur(20px);
+  background:
+    linear-gradient(145deg, rgba(52, 18, 15, 0.92), rgba(23, 8, 8, 0.94)),
+    radial-gradient(circle at top, rgba(255, 173, 100, 0.18), transparent 60%);
+  border: 1px solid rgba(255, 247, 236, 0.14);
+  border-radius: 28px;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.44);
+  max-width: 42rem;
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  text-align: center;
+}
+
+.empty-stage__eyebrow,
+.debug-card__label {
+  color: #f3c384;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  margin: 0 0 0.85rem;
+  text-transform: uppercase;
+}
+
+.empty-stage__card h1 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: clamp(2.6rem, 5vw, 4.7rem);
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+  margin: 0;
+}
+
+.empty-stage__card p {
+  color: #eed9cc;
+  margin: 1rem auto 0;
+  max-width: 32rem;
+}
+
+.empty-stage__actions,
+.stage-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.empty-stage__actions {
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.stage-toolbar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  left: 1rem;
+  pointer-events: none;
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+  z-index: 4;
+}
+
+.stage-toolbar--hidden {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.stage-toolbar--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.stage-toolbar__meta,
+.stage-toolbar__actions {
+  pointer-events: auto;
+}
+
+.stage-chip {
+  backdrop-filter: blur(14px);
+  background: rgba(16, 5, 5, 0.6);
+  border: 1px solid rgba(255, 247, 236, 0.16);
+  border-radius: 999px;
+  color: #fff7ec;
+  display: inline-flex;
+  max-width: min(42rem, calc(100vw - 18rem));
+  overflow: hidden;
+  padding: 0.7rem 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-chip--muted {
+  color: #d5c0b4;
+}
+
+.stage-button {
+  align-items: center;
+  background: rgba(255, 247, 236, 0.12);
+  border: 1px solid rgba(255, 247, 236, 0.16);
+  border-radius: 999px;
+  color: #fff7ec;
+  display: inline-flex;
+  gap: 0.6rem;
+  padding: 0.72rem 1rem;
+}
+
+.stage-button--ghost {
+  background: rgba(16, 5, 5, 0.56);
+}
+
+.stage-button--slash span {
+  align-items: center;
+  background: #fff7ec;
+  border-radius: 999px;
+  color: #1f0b0a;
+  display: inline-flex;
+  font-weight: 800;
+  height: 1.7rem;
+  justify-content: center;
+  width: 1.7rem;
+}
+
+.stage-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.transport-overlay {
+  background: linear-gradient(180deg, rgba(22, 8, 8, 0), rgba(22, 8, 8, 0.88));
+  bottom: 0;
+  left: 0;
+  padding: 4.4rem 1rem 1rem;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+  z-index: 3;
+}
+
+.transport-overlay--hidden {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.transport-overlay--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.transport-overlay__labels {
+  align-items: center;
+  color: #fff7ec;
+  display: flex;
+  font-size: 0.92rem;
+  justify-content: space-between;
+  margin-bottom: 0.55rem;
+}
+
+.transport-overlay__track {
+  background: rgba(255, 247, 236, 0.16);
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.transport-overlay__fill {
+  background: linear-gradient(90deg, #f2b34e, #d74b27);
+  border-radius: inherit;
+  height: 100%;
+}
+
+.transport-overlay__thumb {
+  background: #fff7ec;
+  border-radius: 999px;
+  box-shadow: 0 0 0 5px rgba(255, 247, 236, 0.14);
+  height: 18px;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+}
+
+.transport-overlay--rewinding .transport-overlay__thumb {
+  animation: rewind-pulse 600ms ease-in-out infinite;
+}
+
+.camera-dock {
+  bottom: 1rem;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 1rem;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+  width: min(20vw, 220px);
+  z-index: 4;
+}
+
+.camera-dock--hidden {
+  transform: translateY(12px) scale(0.94);
+}
+
+.camera-dock--visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.camera-preview {
+  aspect-ratio: 4 / 3;
+  border: 1px solid rgba(255, 247, 236, 0.18);
+  border-radius: 18px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  object-fit: cover;
+  width: 100%;
+}
+
+.camera-preview--mirrored {
+  transform: scaleX(-1);
+}
+
+.camera-dock__meter,
+.debug-meter {
+  background: rgba(255, 247, 236, 0.14);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.camera-dock__meter {
+  height: 8px;
+  margin-top: 0.5rem;
+}
+
+.camera-dock__fill,
+.debug-meter__fill {
+  background: rgba(242, 178, 78, 0.7);
+  border-radius: inherit;
+  height: 100%;
+  transition: width 90ms linear;
+}
+
+.camera-dock__fill--active,
+.debug-meter__fill--active {
+  background: linear-gradient(90deg, #f2a24c, #d74b27);
+}
+
+.camera-dock__threshold,
+.debug-meter__threshold {
+  background: #fff7ec;
+  bottom: 0;
+  position: absolute;
+  top: 0;
+}
+
+.camera-dock__threshold {
+  width: 2px;
+}
+
+.debug-overlay {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  transition:
+    opacity 180ms ease,
+    visibility 180ms ease,
+    transform 180ms ease;
+  z-index: 5;
+}
+
+.debug-overlay--hidden {
+  opacity: 0;
+  transform: translateY(10px);
+  visibility: hidden;
+}
+
+.debug-overlay--visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.debug-overlay__metrics {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  left: 1rem;
+  max-width: min(980px, calc(100% - 2rem));
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+}
+
+.debug-card,
+.pane-host,
+.debug-overlay__errors {
+  backdrop-filter: blur(20px);
+  background: rgba(37, 10, 10, 0.84);
+  border: 1px solid rgba(255, 247, 236, 0.12);
+  border-radius: 28px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+}
+
+.debug-card {
+  min-height: 18rem;
+  padding: 1.5rem;
+  pointer-events: auto;
+}
+
+.debug-card__value-row {
+  align-items: baseline;
+  display: flex;
+  gap: 0.85rem;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.debug-card__value-row strong {
+  font-size: clamp(3rem, 5vw, 4rem);
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  line-height: 0.92;
+}
+
+.debug-card__value-row span,
+.debug-card__hint {
+  color: #e7cfc1;
+}
+
+.debug-card__value-row span {
+  font-size: clamp(1.15rem, 2vw, 2rem);
+}
+
+.debug-meter {
+  height: 20px;
+}
+
+.debug-meter__threshold {
+  width: 4px;
+}
+
+.debug-card__hint {
+  font-size: clamp(1.2rem, 2vw, 1.45rem);
+  margin: 1.2rem 0 0;
+}
+
+.debug-overlay__controls {
+  bottom: calc(1rem + min(24vh, 170px) + 3rem);
+  max-width: min(360px, calc(100% - 2rem));
+  pointer-events: auto;
+  position: absolute;
+  right: 1rem;
+  width: min(360px, calc(100% - 2rem));
+}
+
+.pane-host {
+  min-height: 20rem;
+  padding: 0.8rem;
+}
+
+.pane-host .tp-rotv {
+  width: 100%;
+}
+
+.debug-overlay__errors {
+  bottom: 1rem;
+  color: #ffe4dc;
+  left: 1rem;
+  max-width: min(640px, calc(100% - 2rem));
+  padding: 0.9rem 1rem;
+  pointer-events: auto;
+  position: absolute;
+}
+
+.debug-overlay__errors p {
+  margin: 0.25rem 0;
+}
+
+.warning-pill {
+  backdrop-filter: blur(12px);
+  background: rgba(110, 32, 24, 0.7);
+  border: 1px solid rgba(255, 173, 160, 0.42);
+  border-radius: 999px;
+  bottom: 1rem;
+  color: #fff7ec;
+  left: 50%;
+  padding: 0.72rem 1rem;
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 6;
+}
+
+.visually-hidden {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+@keyframes rewind-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 6px rgba(255, 247, 236, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(215, 75, 39, 0.14);
+  }
+}
+
+@media (max-width: 960px) {
+  .debug-overlay__metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .debug-card {
+    min-height: auto;
+  }
+
+  .debug-overlay__controls {
+    left: 1rem;
+    max-width: none;
+    right: 1rem;
+    width: auto;
+  }
+
+  .debug-overlay__errors {
+    bottom: auto;
+    left: 1rem;
+    right: 1rem;
+    top: calc(100% - 9rem);
+  }
+}
+
+@media (max-width: 720px) {
+  .stage-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .stage-chip {
+    max-width: calc(100vw - 2rem);
+  }
+
+  .debug-card__value-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .camera-dock {
+    width: min(38vw, 180px);
+  }
+}
